@@ -1,0 +1,261 @@
+// Prisma Client'i uygulama kodunda kullanabilmek için üretir.
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Projenin MySQL veritabanı kullandığını belirtir.
+// Prisma 7'de bağlantı adresi prisma.config.ts üzerinden tanımlanabilir.
+datasource db {
+  provider = "mysql"
+}
+
+/// Bir oyun oturumunun genel durumunu belirtir.
+enum GameStatus {
+  /// Oyuncuların katılması bekleniyor.
+  WAITING
+  /// Oyun ve turlar devam ediyor.
+  ACTIVE
+  /// Oyun normal şekilde tamamlandı.
+  FINISHED
+  /// Oyun yetersiz katılım veya başka bir nedenle iptal edildi.
+  CANCELLED
+}
+
+/// Tek bir turun hangi aşamada olduğunu belirtir.
+enum RoundStatus {
+  /// Tur henüz başlamadı.
+  WAITING
+  /// Oyuncular şu anda tahmin gönderebilir.
+  ACTIVE
+  /// Tahmin alımı kapandı ve eşleşmeler hesaplanıyor.
+  PROCESSING
+  /// Tur sonuçlandırıldı.
+  FINISHED
+}
+
+/// Oyuncunun belirli bir oyun oturumundaki durumunu belirtir.
+enum ParticipantStatus {
+  /// Oyuncu hâlâ oyunda.
+  ACTIVE
+  /// Oyuncunun tahmini eşleşmediği için elendi.
+  ELIMINATED
+  /// Oyuncu son aşamaya ulaştı ve sohbet hakkı kazandı.
+  FINALIST
+  /// Oyuncu oyun devam ederken ayrıldı.
+  LEFT
+}
+
+/// Finalist sohbetinin açık veya kapalı olduğunu belirtir.
+enum ConversationStatus {
+  /// Üyeler yeni mesaj gönderebilir.
+  ACTIVE
+  /// Sohbet sona erdi; yeni mesaj kabul edilmez.
+  CLOSED
+}
+
+/// Siteyi kullanan kişiyi temsil eder.
+/// Bir kullanıcı zaman içinde birden fazla oyun oturumuna katılabilir.
+model User {
+  /// Kullanıcının sistem içindeki değişmeyen kimliği.
+  id          String   @id @default(cuid())
+  /// Kullanıcının ekranda görünen güncel adı.
+  nickname    String   @db.VarChar(30)
+  /// Üyeliksiz kullanımda aynı tarayıcıyı yeniden tanımaya yarayan kimlik.
+  clientToken String   @unique @default(uuid())
+  /// Kullanıcının ilk oluşturulduğu zaman.
+  createdAt   DateTime @default(now())
+  /// Kullanıcı kaydı her güncellendiğinde otomatik yenilenir.
+  lastSeenAt  DateTime @updatedAt
+
+  /// Kullanıcının katıldığı bütün oyun oturumları.
+  participations SessionParticipant[]
+}
+
+/// Dakikada bir oluşturulan bağımsız oyun oturumunu temsil eder.
+model GameSession {
+  /// Oyun oturumunun benzersiz kimliği.
+  id           String     @id @default(cuid())
+  /// Oyunun başlayacağı zaman.
+  startsAt     DateTime
+  /// Bu zamandan sonra yeni oyuncu kabul edilmez.
+  joinClosesAt DateTime
+  /// Oyunun mevcut durumu; yeni oyunlar bekleme durumunda başlar.
+  status       GameStatus @default(WAITING)
+  /// Oyun tamamlandığında veya iptal edildiğinde doldurulur.
+  finishedAt   DateTime?
+  /// Oyun kaydının veritabanında oluşturulduğu zaman.
+  createdAt    DateTime   @default(now())
+
+  /// Bu oyuna ait bütün turlar.
+  rounds        Round[]
+  /// Bu oyuna katılan bütün oyuncular.
+  participants  SessionParticipant[]
+  /// Bu oyunun sonunda oluşan finalist sohbetleri.
+  conversations Conversation[]
+
+  /// Aynı başlangıç zamanına sahip iki oyun oluşturulmasını engeller.
+  @@unique([startsAt])
+  /// Sıradaki veya aktif oyunu durum ve zamana göre hızlı bulmayı sağlar.
+  @@index([status, startsAt])
+}
+
+/// Bir kullanıcının belirli bir oyun oturumuna katılımını temsil eder.
+/// User ile GameSession arasındaki çoktan çoğa ilişkiye ait bilgileri taşır.
+model SessionParticipant {
+  /// Katılım kaydının benzersiz kimliği.
+  id               String            @id @default(cuid())
+  /// Oyuncunun katıldığı oyun oturumunun kimliği.
+  sessionId        String
+  /// Katılan kullanıcının kimliği.
+  userId           String
+  /// Kullanıcının bu oyuna katıldığı andaki nickname'i.
+  /// Kullanıcı daha sonra adını değiştirirse geçmiş oyun etkilenmez.
+  nicknameSnapshot String            @db.VarChar(30)
+  /// Oyuncunun bu oyun içindeki mevcut durumu.
+  status           ParticipantStatus @default(ACTIVE)
+  /// Oyuncunun oyuna katıldığı zaman.
+  joinedAt         DateTime          @default(now())
+  /// Oyuncu elendiyse elendiği turun numarası.
+  eliminatedRound  Int?
+  /// Oyuncu finalist olduysa ulaştığı son turun numarası.
+  finalRound       Int?
+
+  /// Katılım kaydının ait olduğu oyun.
+  session GameSession          @relation(fields: [sessionId], references: [id])
+  /// Katılım kaydının ait olduğu kullanıcı.
+  user    User                 @relation(fields: [userId], references: [id])
+  /// Oyuncunun bu oyun boyunca yaptığı tahminler.
+  guesses Guess[]
+  /// Oyuncunun üye olduğu finalist sohbetleri.
+  chats   ConversationMember[]
+
+  /// Aynı kullanıcının aynı oyuna iki kez katılmasını engeller.
+  @@unique([sessionId, userId])
+  /// Bir oyundaki aktif, elenmiş veya finalist oyuncuları hızlı bulmayı sağlar.
+  @@index([sessionId, status])
+}
+
+/// Bir oyun oturumunun tek bir aşamasını/turunu temsil eder.
+model Round {
+  /// Turun benzersiz kimliği.
+  id          String      @id @default(cuid())
+  /// Turun ait olduğu oyun oturumunun kimliği.
+  sessionId   String
+  /// Turun oyun içindeki sırası: 1, 2, 3 gibi.
+  roundNumber Int
+  /// Tahmin alımının başlayacağı zaman.
+  startsAt    DateTime
+  /// Tahmin alımının biteceği zaman.
+  endsAt      DateTime
+  /// Turun mevcut işlem durumu.
+  status      RoundStatus @default(WAITING)
+
+  /// Turun ait olduğu oyun oturumu.
+  session GameSession @relation(fields: [sessionId], references: [id])
+  /// Bu turda gönderilen bütün tahminler.
+  guesses Guess[]
+
+  /// Aynı oyun içerisinde aynı tur numarasının iki kez oluşmasını engeller.
+  @@unique([sessionId, roundNumber])
+  /// Bir oyunun bekleyen veya aktif turunu hızlı bulmayı sağlar.
+  @@index([sessionId, status])
+}
+
+/// Bir oyuncunun belirli bir turda gönderdiği kelime tahminini temsil eder.
+model Guess {
+  /// Tahminin benzersiz kimliği.
+  id                   String   @id @default(cuid())
+  /// Tahminin yapıldığı turun kimliği.
+  roundId              String
+  /// Tahmini yapan oyun katılımcısının kimliği.
+  sessionParticipantId String
+  /// Oyuncunun kelimeyi yazdığı orijinal biçim.
+  originalWord         String   @db.VarChar(100)
+  /// Eşleştirme için boşluk ve büyük/küçük harf farkları giderilmiş biçim.
+  normalizedWord       String   @db.VarChar(100)
+  /// Tahminin sunucuya ulaştığı zaman.
+  submittedAt          DateTime @default(now())
+
+  /// Tahminin ait olduğu tur.
+  round       Round              @relation(fields: [roundId], references: [id])
+  /// Tahmini yapan katılımcı.
+  participant SessionParticipant @relation(fields: [sessionParticipantId], references: [id])
+
+  /// Bir oyuncunun aynı turda yalnızca bir tahmin yapmasını sağlar.
+  @@unique([roundId, sessionParticipantId])
+  /// Aynı turda aynı normalize kelimeyi yazanları hızlıca bulmayı sağlar.
+  @@index([roundId, normalizedWord])
+}
+
+/// Aynı kelimeyle finale kalan oyuncular için oluşturulan sohbet odasını temsil eder.
+model Conversation {
+  /// Sohbet odasının benzersiz kimliği.
+  id             String             @id @default(cuid())
+  /// Sohbetin oluştuğu oyun oturumunun kimliği.
+  sessionId      String
+  /// Grubun finale kaldığı turun numarası.
+  finalRound     Int
+  /// Bu oyuncuları eşleştiren normalize edilmiş kelime.
+  normalizedWord String             @db.VarChar(100)
+  /// Sohbetin mesaj kabul edip etmediğini belirtir.
+  status         ConversationStatus @default(ACTIVE)
+  /// Sohbetin oluşturulduğu zaman.
+  createdAt      DateTime           @default(now())
+  /// Sohbet süreliyse kapanacağı zaman.
+  closesAt       DateTime?
+
+  /// Sohbetin oluştuğu oyun oturumu.
+  session  GameSession          @relation(fields: [sessionId], references: [id])
+  /// Bu sohbeti görebilen finalist oyuncular.
+  members  ConversationMember[]
+  /// Sohbet içinde gönderilen mesajlar.
+  messages Message[]
+
+  /// Aynı oyun, tur ve kelime için iki sohbet açılmasını engeller.
+  @@unique([sessionId, finalRound, normalizedWord])
+}
+
+/// Bir finalist oyuncunun bir sohbet odasına üyeliğini temsil eder.
+/// SessionParticipant ile Conversation arasındaki çoktan çoğa ilişkiyi yönetir.
+model ConversationMember {
+  /// Üye olunan sohbetin kimliği.
+  conversationId       String
+  /// Sohbete katılan oyun katılımcısının kimliği.
+  sessionParticipantId String
+  /// Oyuncunun sohbet odasına eklendiği zaman.
+  joinedAt             DateTime @default(now())
+
+  /// Üyeliğin ait olduğu sohbet.
+  conversation Conversation       @relation(fields: [conversationId], references: [id])
+  /// Sohbete üye olan finalist oyuncu.
+  participant  SessionParticipant @relation(fields: [sessionParticipantId], references: [id])
+  /// Bu üyenin gönderdiği mesajlar.
+  messages     Message[]
+
+  /// Aynı oyuncunun aynı sohbete iki kez eklenmesini engeller.
+  @@id([conversationId, sessionParticipantId])
+}
+
+/// Finalist sohbetine gönderilen tek bir mesajı temsil eder.
+model Message {
+  /// Mesajın benzersiz kimliği.
+  id                  String    @id @default(cuid())
+  /// Mesajın gönderildiği sohbetin kimliği.
+  conversationId      String
+  /// Mesajı gönderen oyun katılımcısının kimliği.
+  senderParticipantId String
+  /// Mesajın metin içeriği.
+  body                String    @db.VarChar(1000)
+  /// Mesajın gönderildiği zaman.
+  createdAt           DateTime  @default(now())
+  /// Mesaj silinirse silinme zamanı yazılır; kayıt fiziksel olarak korunur.
+  deletedAt           DateTime?
+
+  /// Mesajın ait olduğu sohbet.
+  conversation Conversation       @relation(fields: [conversationId], references: [id])
+  /// Gönderenin gerçekten bu sohbetin üyesi olmasını birleşik ilişkiyle garanti eder.
+  sender       ConversationMember @relation(fields: [conversationId, senderParticipantId], references: [conversationId, sessionParticipantId])
+
+  /// Bir sohbetin mesajlarını kronolojik olarak hızlı getirmeyi sağlar.
+  @@index([conversationId, createdAt])
+}

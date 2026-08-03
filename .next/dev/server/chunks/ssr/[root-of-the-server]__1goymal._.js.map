@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 10, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/bayra/Desktop/kelime%20tahmin/src/app/page.tsx"],"sourcesContent":["export default function HomePage() {\r\n  return (\r\n    <main>\r\n      <h1>Kelime Tahmin Oyunu</h1>\r\n      <p>Oyun yakında başlayacak.</p>\r\n    </main>\r\n  );\r\n}\r\n"],"names":["HomePage"],"mappings":";;;;;;AAAe,SAASA;IACtB,qBACE,8OAAC;;0BACC,8OAAC;0BAAG;;;;;;0BACJ,8OAAC;0BAAE;;;;;;;;;;;;AAGT"}}]
+}
