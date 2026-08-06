@@ -68,6 +68,7 @@ export async function POST(request: Request) {
           select: {
             id: true,
             nickname: true,
+            clientToken: true,
             createdAt: true,
             lastSeenAt: true,
           },
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
       },
     );
 
-    if (!existingUser && "clientToken" in user) {
+    if (!existingUser) {
       response.cookies.set({
         name: CLIENT_TOKEN_COOKIE,
         value: user.clientToken,

@@ -2,7 +2,38 @@
 
 Bu proje, aynı kelimeyi tahmin eden oyuncuları art arda turlarda eşleştiren ve son aşamaya kalan oyuncuların birbirleriyle mesajlaşmasını sağlayan çevrim içi bir kelime oyunudur.
 
-Oyuncu siteye bir nickname ile girer, açılacak oyun oturumuna katılır ve her turda bir kelime tahmini gönderir. Aynı kelimeyi yazan oyuncular sonraki tura geçerken eşleşmeyen oyuncular elenir. Oyun sonunda aynı grupta kalan finalistler birbirlerinin nickname'lerini görebilir ve kendilerine açılan sohbet odasında mesajlaşabilir.
+Oyuncu siteye bir nickname ile girer ve doğrudan tahmin ekranına düşer. Kelimesini yazar, tur süresinin dolmasını bekler; aynı kelimeyi yazanlar sonraki tura birlikte geçerken eşleşmeyenler elenir. Üçüncü turun sonunda hayatta kalan gruplar finalist olur; aynı gruptaki oyuncular birbirlerinin nickname'lerini görebilir ve kendilerine açılan sohbet odasında mesajlaşabilir.
+
+### Ayrı bir lobi aşaması yoktur
+
+Oyuncu bekleyip sonra oynamaz; önce oynar, sonra bekler. **İlk tur aynı zamanda katılım penceresidir:** ilk oyuncu geldiğinde oturum ve birinci tur birlikte açılır, o turun süresi boyunca gelen herkes aynı oyuna düşer ve kelimesini istediği an gönderir. Süre dolduğunda tur çözülür.
+
+Bunun sonucu olarak arayüzde "lobiye katıl" gibi bir adım veya buton bulunmaz; oyuncu hiçbir ekranda "lobi" kavramıyla karşılaşmaz.
+
+Oyun başladıktan sonra — yani birinci tur çözüldükten sonra — gelen oyuncular devam eden oyuna alınmaz. Hayatta kalan oyuncular bir kelime etrafında gruplanmış durumdadır ve sonradan katılan birinin bu gruplamada yeri yoktur. Bu oyuncular için yeni bir oturum açılır.
+
+### Katılımın erken kapanması
+
+Katılım, birinci turun bitiminden `JOIN_CUTOFF_SECONDS` saniye önce kapanır. Aksi hâlde turun bitmesine iki saniye kala giren bir oyuncunun kelimesini yazmaya vakti olmaz.
+
+Böylece her oyuncuya kelimesini düşünmek için en az bu kadar süre garanti edilir. Eşik geçildikten sonra gelen oyuncular bu oyuna değil, yeni açılan oturuma yönlendirilir — bu da oyunların üst üste binerek akmasını sağlar. Aynı anda birden fazla oyun `ACTIVE` durumda olabilir; katılıma açık olan ise her zaman tektir.
+
+## Oyun parametreleri
+
+Aşağıdaki değerler oyunun temposunu belirler ve tek bir yapılandırma dosyasında tutulmalıdır.
+
+| Parametre | Değer | Anlamı |
+| --- | --- | --- |
+| `MIN_PLAYERS` | 2 | Bir turun eşleşme üretebilmesi için gereken en az tahmin sayısı. |
+| `ROUND_SECONDS` | 60 | Bir turda tahmin göndermek için tanınan süre. |
+| `JOIN_CUTOFF_SECONDS` | 15 | İlk turun bitimine bu kadar kala katılım kapanır. |
+| `TOTAL_ROUNDS` | 3 | Oyunun kaç tur sürdüğü. Son turda hayatta kalanlar finalist olur. |
+
+Bir oyunun toplam süresi bu değerlerle öngörülebilir: yaklaşık 3 dakika. Oyuncunun bekleyeceği süre ne zaman katıldığına bağlıdır; ilk turda en fazla 60, en az `JOIN_CUTOFF_SECONDS` saniye bekler.
+
+Katılımcı sayısında üst sınır yoktur; katılım penceresi kapanana kadar gelen herkes oyuna alınır. Buna karşılık `TOTAL_ROUNDS` sabit olduğu için oyunun daraltma gücü sabittir, katılımcı sayısı ise değildir. Kalabalık oyunlarda ilk turda oyuncuların büyük kısmı `elma`, `araba` gibi yaygın kelimelerde buluşacağı için eleme az olur ve son turda tek bir kelime etrafında onlarca kişilik gruplar oluşabilir. Bu, oyunun vaat ettiği "seninle aynı kelimeyi düşünen kişiyi bul" hissini zayıflatır.
+
+Bunu katılımı sınırlamadan çözmenin yolu, sohbet tarafında sınır koymaktır: bir finalist grubu belirli bir büyüklüğü aşarsa aynı kelime için birden fazla `Conversation` açılıp oyuncular bunlara dağıtılabilir. Mevcut şema buna izin vermez — `Conversation` üzerindeki `@@unique([sessionId, finalRound, normalizedWord])` kısıtı aynı kelime için ikinci bir sohbet açılmasını engeller. Bu yola gidilirse kısıta bir grup sırası alanı eklenmesi gerekir.
 
 ## Veritabanı yapısı
 
@@ -13,7 +44,7 @@ Veritabanı sekiz temel modelden oluşur:
 | Prisma modeli | Veritabanındaki görevi |
 | --- | --- |
 | `User` | Siteyi kullanan kişiyi ve tarayıcı kimliğini saklar. |
-| `GameSession` | Belirli bir zamanda başlayan bağımsız oyunu saklar. |
+| `GameSession` | Bağımsız bir oyun oturumunu ve katılım penceresini saklar. |
 | `SessionParticipant` | Kullanıcının belirli bir oyuna katılımını ve oyun içindeki durumunu saklar. |
 | `Round` | Bir oyun içerisindeki turları ve tur sürelerini saklar. |
 | `Guess` | Bir oyuncunun belirli bir turdaki kelime tahminini saklar. |
@@ -33,17 +64,21 @@ Oyun oturumunun genel durumunu belirtir.
 
 | Değer | Anlamı |
 | --- | --- |
-| `WAITING` | Oyun başlamayı ve oyuncuların katılmasını bekliyor. |
-| `ACTIVE` | Oyun başladı ve turlar devam ediyor. |
-| `FINISHED` | Oyun normal şekilde tamamlandı. |
-| `CANCELLED` | Oyun yetersiz oyuncu veya başka bir nedenle iptal edildi. |
+| `WAITING` | Katılım açık; birinci tur devam ediyor ve yeni oyuncu kabul ediliyor. Aynı anda yalnızca bir oyun bu durumda olabilir. |
+| `ACTIVE` | Katılım kapandı; oyun kendi oyuncularıyla devam ediyor. |
+| `FINISHED` | Oyun tamamlandı. Finalist üretmiş olabilir de olmayabilir de. |
+| `CANCELLED` | Katılım kapandığında oyuncu sayısı `MIN_PLAYERS` altında kaldığı için oyun iptal edildi. |
+
+`WAITING` durumu, sezgisel olabileceğinin aksine "henüz başlamadı" anlamına gelmez. Birinci tur bu durumda işler; ayrımı yapan şey oyunun başlayıp başlamadığı değil, katılıma açık olup olmadığıdır. `lobbyKey` alanı da tam olarak bu durumla birlikte dolu kalır.
 
 Normal durum geçişi:
 
 ```text
 WAITING → ACTIVE → FINISHED
-                 ↘ CANCELLED
+        ↘ CANCELLED
 ```
+
+`CANCELLED` durumuna yalnızca `WAITING` üzerinden geçilir: katılım kapandığında oyuncu sayısı yeterli değildir. Bu kontrol turun bitişinde değil katılımın kapanışında yapılır — tek başına kalan oyuncuyu boş yere turun sonuna kadar bekletmenin anlamı yoktur. Bir kez `ACTIVE` olan oyun her hâlükârda `FINISHED` ile biter, finalist üretmese bile.
 
 ### `RoundStatus`
 
@@ -104,18 +139,32 @@ Bir kullanıcı zaman içerisinde birçok oyuna katılabilir.
 
 ### `GameSession`
 
-Tek bir oyun oturumunu temsil eder. Dakikada bir yeni oturum açılması planlanıyorsa her başlangıç zamanı için yeni bir `GameSession` oluşturulur.
+Tek bir oyun oturumunu temsil eder. Oturum, katılıma açık bir oyun yokken ilk oyuncu siteye girdiğinde birinci turuyla birlikte oluşturulur.
 
 Önemli alanları:
 
-- `startsAt`: Oyunun başlayacağı zaman.
-- `joinClosesAt`: Yeni oyuncu kabulünün sona ereceği zaman.
+- `startsAt`: Oyunun başladığı zaman; oturumun oluşturulma anıyla aynıdır.
+- `joinClosesAt`: Yeni oyuncu kabulünün sona erdiği zaman. Birinci turun bitişinden `JOIN_CUTOFF_SECONDS` saniye öncesine denk gelir.
 - `status`: Oyunun genel durumu.
 - `finishedAt`: Oyun tamamlandığında veya iptal edildiğinde doldurulur.
 
 Oyunun aktif turu `GameSession` üzerinde ayrıca tutulmaz. İlgili oyuna ait `status = ACTIVE` durumundaki `Round` kaydı sorgulanarak bulunur. Böylece aynı tur bilgisi iki farklı yerde saklanmaz ve durum tutarsızlığı riski azalır.
 
-`startsAt` benzersizdir; aynı başlangıç zamanına sahip iki oyun açılamaz.
+### Aynı anda tek açık oturum kuralı
+
+Oyuncu havuzunun bölünmemesi için aynı anda yalnızca bir oturum `WAITING` durumunda olabilir. Aksi hâlde iki oyuncu aynı saniyede geldiğinde iki ayrı oturum açılır, her biri tek kişilik kalır ve ikisi de iptal olur.
+
+Bu kural uygulama kodundaki bir kontrolle güvence altına alınamaz; iki eşzamanlı istek de "açık oturum yok" sonucunu okuyup ikisi birden oturum oluşturabilir. Kısıtın veritabanı tarafından uygulanması gerekir.
+
+Bunun için oturumda yalnızca bu işe ayrılmış bir `lobbyKey` alanı bulunur:
+
+- Oturum `WAITING` durumundayken `lobbyKey` sabit `"OPEN"` değerini taşır.
+- Katılım kapandığında (oyun `ACTIVE` veya `CANCELLED` olduğunda) `lobbyKey` `NULL` yapılır.
+- Alan `@unique` olarak işaretlenmiştir.
+
+MySQL benzersiz indekslerde birden fazla `NULL` değere izin verdiği için bu tanım, geçmişteki oyun sayısından bağımsız olarak aynı anda en fazla bir satırın `"OPEN"` olmasını garanti eder. İkinci oturumu açmaya çalışan istek benzersizlik hatası alır; bu hata yakalanıp mevcut oturum yeniden okunmalıdır.
+
+Alanın yalnızca `"OPEN"` ve `NULL` değerlerini alması kritiktir. Başka bir değer yazılırsa ikinci bir oturum katılıma açık hâle gelir ve kısıt sessizce işlevsiz kalır. Bu yüzden değer koda `LOBBY_KEY_OPEN` sabiti olarak gömülmüştür ve doğrudan dize yazılmamalıdır.
 
 ### `SessionParticipant`
 
@@ -238,25 +287,52 @@ erDiagram
 ## Temel oyun akışı
 
 1. Kullanıcı nickname girer ve bir `User` kaydı bulunur veya oluşturulur.
-2. Dakikalık oyun için bir `GameSession` oluşturulur.
-3. Kullanıcı oyuna katıldığında `SessionParticipant` kaydı oluşturulur.
-4. Oyun başlayınca ilk `Round` aktif hale getirilir.
-5. Her oyuncunun tahmini `Guess` olarak kaydedilir.
-6. Tur süresi bitince tur `PROCESSING` durumuna alınır.
-7. Aynı `normalizedWord` değerine sahip en az iki oyuncu sonraki tura geçirilir.
-8. Eşleşmeyen oyuncular `ELIMINATED` durumuna alınır.
-9. Son aşamaya kalan oyuncular `FINALIST` durumuna alınır.
-10. Her finalist grubu için bir `Conversation` ve üyeleri için `ConversationMember` kayıtları oluşturulur.
-11. Finalistler `Message` kayıtları üzerinden mesajlaşır.
+2. Katılıma açık oturum (`lobbyKey = "OPEN"`) aranır. Yoksa yeni bir `GameSession` ve birinci `Round` birlikte oluşturulur: turun bitişi `ROUND_SECONDS` sonrası, `joinClosesAt` ise bundan `JOIN_CUTOFF_SECONDS` öncesidir.
+3. Kullanıcı oturuma alındığında `SessionParticipant` kaydı oluşturulur ve doğrudan tahmin ekranı gösterilir.
+4. Oyuncu kelimesini gönderir; tahmin `Guess` olarak kaydedilir ve oyuncu bekleme durumuna geçer.
+5. `joinClosesAt` geldiğinde katılım kapanır ve `lobbyKey` boşaltılır. Bu andan sonra gelen oyuncular için yeni bir oturum açılır; iki oyun bir süre birlikte akar.
+6. Katılım kapanırken oyuncu sayısı `MIN_PLAYERS` altındaysa oturum `CANCELLED` olur, değilse `ACTIVE` olur.
+7. Tur süresi bitince tur `PROCESSING` durumuna alınır ve yeni tahmin kabul edilmez.
+8. Aynı `normalizedWord` değerine sahip en az iki oyuncu sonraki tura geçirilir; eşleşmeyenler ve hiç tahmin göndermemiş olanlar `ELIMINATED` olur.
+9. `TOTAL_ROUNDS` sayısına ulaşılmamışsa ve hayatta kalan varsa yeni bir `Round` açılır, 4. adımdan devam edilir. Bu turlara yeni oyuncu katılamaz.
+10. Son turun sonunda hayatta kalan oyuncular `FINALIST` durumuna alınır ve oturum `FINISHED` olur.
+11. Her finalist grubu için bir `Conversation` ve üyeleri için `ConversationMember` kayıtları oluşturulur.
+12. Finalistler `Message` kayıtları üzerinden mesajlaşır.
+
+### Ekran durumları
+
+Arayüz tek bir ekrandan oluşur ve oyuncunun durumuna göre şekil değiştirir. Ayrı bir lobi veya oda seçimi ekranı yoktur.
+
+| Durum | Ekranda görünen |
+| --- | --- |
+| Nickname yok | Nickname girişi. Yalnızca ilk ziyarette. |
+| Tur açık, tahmin gönderilmemiş | Kelime girişi ve geri sayım. |
+| Tahmin gönderilmiş, tur sürüyor | Bekleme; geri sayım ve o an oyunda kaç kişi olduğu. |
+| Tur çözüldü, oyuncu devam ediyor | Kaç kişiyle eşleştiği ve sıradaki tur (`Tur 2/3`). |
+| Oyuncu elendi | "Kimse seninle aynı kelimeyi yazmadı, tekrar dene" ve yeni oyuna girme bağlantısı. |
+| Oturum iptal edildi | "Yeterli oyuncu yoktu, tekrar dene" ve yeni oyuna girme bağlantısı. |
+| Oyuncu finalist | Finalist sohbeti ve grup üyelerinin nickname'leri. |
+
+### Oyunun erken bitmesi
+
+Oyun her zaman üç tur sürmez. Bir turun sonunda hiçbir grup oluşmazsa — yani herkesin tahmini farklıysa — geriye hayatta kalan oyuncu kalmaz. Bu durumda oturum finalist üretmeden `FINISHED` olur ve hiçbir `Conversation` açılmaz. Arayüzün bu sonucu ayrı bir ekranla ("kimse eşleşemedi") karşılaması gerekir.
+
+Benzer şekilde katılım kapandığında oyuncu sayısı `MIN_PLAYERS` altındaysa oturum `CANCELLED` olur. Düşük trafikte bu en sık karşılaşılacak sonuçtur: siteye tek başına giren oyuncu kelimesini yazar, katılım penceresi kapanır ve kimse gelmemiştir.
+
+Her iki durumda da oyuncu aynı ekranı görür — kimsenin onunla eşleşmediğini söyleyen bir mesaj ve yeniden denemek için bir bağlantı. Oyuncu otomatik olarak sıradaki oyuna aktarılmaz; yeni oyuna girmek için kendisi harekete geçer.
 
 ## Önemli uygulama kuralları
 
 - Oyun ve tur süreleri tarayıcı saatine değil sunucu saatine göre kontrol edilmelidir.
 - Tur `ACTIVE` değilse yeni tahmin kabul edilmemelidir.
-- Tahmin normalizasyonu API tarafında tek bir fonksiyonla yapılmalıdır.
+- Oturum `WAITING` değilse veya `joinClosesAt` geçmişse yeni katılım kabul edilmemelidir.
+- `lobbyKey` alanına `LOBBY_KEY_OPEN` sabiti dışında bir değer yazılmamalıdır; aksi hâlde tek açık oturum garantisi bozulur.
+- Tahmin normalizasyonu ve doğrulaması tek bir modülde toplanmalıdır: `src/lib/words/normalize.ts`.
 - Tur sonuçlandırma işlemi transaction içinde gerçekleştirilmelidir.
+- Tur ilerletme, `UPDATE ... WHERE status = 'ACTIVE'` biçiminde koşullu bir güncellemeyle korunmalıdır. Aynı turu aynı anda iki isteğin sonuçlandırması hâlinde ikinci güncelleme sıfır satır etkiler ve işlem güvenle sonlandırılır.
+- Aynı anda yalnızca bir oturum `WAITING` durumunda olabilir. Bu kısıt uygulama kodunda değil veritabanı seviyesinde uygulanmalıdır.
 - Bir oyuncunun yalnızca katıldığı oyun ve üye olduğu sohbet üzerinde işlem yapabildiği doğrulanmalıdır.
-- Oyun sonsuza kadar sürmemelidir. Maksimum tur sayısı veya zaman sınırı belirlenmelidir.
+- Oyun `TOTAL_ROUNDS` sayısını aşmamalıdır.
 - WebSocket anlık ekran güncellemeleri için kullanılabilir; asıl oyun durumu veritabanında tutulmalıdır.
 
 ## Prisma dosyaları

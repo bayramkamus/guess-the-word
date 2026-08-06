@@ -71,16 +71,24 @@ model User {
   participations SessionParticipant[]
 }
 
-/// Dakikada bir oluşturulan bağımsız oyun oturumunu temsil eder.
+/// Bir lobiyi ve o lobiden doğan bağımsız oyun oturumunu temsil eder.
+/// Oturum, açık lobi yokken ilk oyuncu katıldığında oluşturulur.
 model GameSession {
   /// Oyun oturumunun benzersiz kimliği.
   id           String     @id @default(cuid())
-  /// Oyunun başlayacağı zaman.
+  /// Oyunun başladığı zaman; oturum oluşturulurken doldurulur.
   startsAt     DateTime
   /// Bu zamandan sonra yeni oyuncu kabul edilmez.
+  /// Birinci turun bitişinden JOIN_CUTOFF_SECONDS saniye öncesine denk gelir.
   joinClosesAt DateTime
   /// Oyunun mevcut durumu; yeni oyunlar bekleme durumunda başlar.
   status       GameStatus @default(WAITING)
+  /// Aynı anda yalnızca bir oturumun katılıma açık kalmasını veritabanı
+  /// seviyesinde garanti eder. Oturum WAITING durumundayken "OPEN" değerini
+  /// taşır; katılım kapandığında null yapılır. MySQL benzersiz indekslerde
+  /// birden çok null'a izin verdiği için aynı anda en fazla bir satır
+  /// "OPEN" olabilir.
+  lobbyKey     String?    @unique @db.VarChar(4)
   /// Oyun tamamlandığında veya iptal edildiğinde doldurulur.
   finishedAt   DateTime?
   /// Oyun kaydının veritabanında oluşturulduğu zaman.
@@ -93,10 +101,9 @@ model GameSession {
   /// Bu oyunun sonunda oluşan finalist sohbetleri.
   conversations Conversation[]
 
-  /// Aynı başlangıç zamanına sahip iki oyun oluşturulmasını engeller.
-  @@unique([startsAt])
-  /// Sıradaki veya aktif oyunu durum ve zamana göre hızlı bulmayı sağlar.
-  @@index([status, startsAt])
+  /// Açık lobiyi ve süresi dolmuş oyunları durum ve oluşturulma zamanına göre
+  /// hızlı bulmayı sağlar.
+  @@index([status, createdAt])
 }
 
 /// Bir kullanıcının belirli bir oyun oturumuna katılımını temsil eder.

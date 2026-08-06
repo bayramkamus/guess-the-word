@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/bayra/Desktop/kelime%20tahmin/src/app/layout.tsx"],"sourcesContent":["import type { ReactNode } from \"react\";\r\n\r\ntype RootLayoutProps = {\r\n  children: ReactNode;\r\n};\r\n\r\nexport default function RootLayout({ children }: RootLayoutProps) {\r\n  return (\r\n    <html lang=\"tr\">\r\n      <body>{children}</body>\r\n    </html>\r\n  );\r\n}\r\n"],"names":["RootLayout","children","lang"],"mappings":";;;;;;AAMe,SAASA,WAAW,EAAEC,QAAQ,EAAmB;IAC9D,qBACE,8OAAC;QAAKC,MAAK;kBACT,cAAA,8OAAC;sBAAMD;;;;;;;;;;;AAGb"}},
-    {"offset": {"line": 34, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/bayra/Desktop/kelime%20tahmin/node_modules/next/src/server/route-modules/app-page/vendored/rsc/react-jsx-dev-runtime.ts"],"sourcesContent":["module.exports = (\n  require('../../module.compiled') as typeof import('../../module.compiled')\n).vendored['react-rsc']!.ReactJsxDevRuntime\n"],"names":["module","exports","require","vendored","ReactJsxDevRuntime"],"mappings":"AAAAA,OAAOC,OAAO,GACZC,QAAQ,4HACRC,QAAQ,CAAC,YAAY,CAAEC,kBAAkB","ignoreList":[0]}}]
-}
