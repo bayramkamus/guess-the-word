@@ -1,0 +1,13 @@
+# Satır sonlarını depoda daima LF olarak sakla.
+# Windows'ta çalışırken dosyalar CRLF olarak açılabilir; bu ayar olmadan
+# içeriği değişmemiş dosyalar sırf satır sonu farkından değişmiş görünür.
+* text=auto eol=lf
+
+# İkili dosyalara dokunulmaz.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

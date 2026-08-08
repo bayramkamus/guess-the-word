@@ -1,9 +1,7 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { readClientToken, setClientTokenCookie } from "@/lib/auth/currentUser";
 import { prisma } from "@/lib/prisma";
-
-const CLIENT_TOKEN_COOKIE = "client_token";
 
 export async function POST(request: Request) {
   try {
@@ -46,8 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const cookieStore = await cookies();
-    const clientToken = cookieStore.get(CLIENT_TOKEN_COOKIE)?.value;
+    const clientToken = await readClientToken();
 
     const existingUser = clientToken
       ? await prisma.user.findUnique({
@@ -100,17 +97,9 @@ export async function POST(request: Request) {
       },
     );
 
-    if (!existingUser) {
-      response.cookies.set({
-        name: CLIENT_TOKEN_COOKIE,
-        value: user.clientToken,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 365,
-      });
-    }
+    // Çerez yalnızca yeni kullanıcıda değil her istekte tazelenir; aksi hâlde
+    // bir yıl sonra düşer ve oyuncu geçmişiyle birlikte kaybolur.
+    setClientTokenCookie(response, user.clientToken);
 
     return response;
   } catch (error) {
