@@ -89,6 +89,10 @@ export async function GET() {
       return NextResponse.json({
         ...base,
         screen: "FINALIST",
+        // İstemci, mesajların kendisine mi ait olduğunu nickname yerine bu
+        // kimlikle karşılaştırmalı; nickname'ler benzersiz olmadığından
+        // aynı isimli iki finalist mesajları yanlış tarafa hizalayabilir.
+        yourParticipantId: participant.id,
         conversation: membership
           ? {
               id: membership.conversation.id,
